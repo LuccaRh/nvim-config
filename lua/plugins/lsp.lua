@@ -1,5 +1,5 @@
 -- servidores LSP: o mason instala, o mason-lspconfig liga, e aqui
--- ficam os atalhos (gd, gr, K, ...)
+-- ficam os atalhos (gd, gD, gr, K, ...)
 return {
     {
         'mason-org/mason.nvim',
@@ -8,7 +8,7 @@ return {
     {
         'mason-org/mason-lspconfig.nvim',
         dependencies = { 'mason-org/mason.nvim', 'neovim/nvim-lspconfig', 'saghen/blink.cmp' },
-        opts = { ensure_installed = { 'basedpyright' } },
+        opts = { ensure_installed = { 'basedpyright', 'vtsls' } },
         config = function(_, o)
             require('mason-lspconfig').setup(o)
 
@@ -18,6 +18,7 @@ return {
                 local t = require('telescope.builtin')
 
                 map('gd', t.lsp_definitions, 'Definicao')
+                map('gD', vim.lsp.buf.type_definition, 'Definicao do tipo')
                 map('gr', t.lsp_references, 'Referencias reais')
 
                 map('K', vim.lsp.buf.hover, 'Hover')
