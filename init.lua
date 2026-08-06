@@ -4,4 +4,5 @@
 -- lua/plugins/  um arquivo por plugin (o lazy.nvim importa todos sozinho)
 
 require('config.options')      -- leader e opcoes (precisa vir antes dos plugins)
+require('config.autocmds')     -- autosave e trim ao salvar
 require('config.lazy')         -- instala o lazy.nvim e carrega lua/plugins/

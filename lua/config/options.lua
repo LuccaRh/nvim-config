@@ -8,7 +8,10 @@ vim.opt.relativenumber = true
 vim.opt.mouse = 'a'
 vim.opt.clipboard = 'unnamedplus'
 vim.opt.termguicolors = true
+vim.opt.colorcolumn = '80'
 
+vim.opt.wildmenu = true
+vim.opt.wildmode = 'longest:full,full'
 vim.opt.tabstop = 4        -- largura visual de um <Tab>
 vim.opt.shiftwidth = 4     -- quantos espaços o >> e o > aplicam
 vim.opt.softtabstop = 4    -- quantos espaços o Tab insere ao digitar
