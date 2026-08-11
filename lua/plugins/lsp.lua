@@ -10,6 +10,16 @@ return {
         dependencies = { 'mason-org/mason.nvim', 'neovim/nvim-lspconfig', 'saghen/blink.cmp' },
         opts = { ensure_installed = { 'basedpyright', 'vtsls' } },
         config = function(_, o)
+            vim.lsp.config('basedpyright', {
+                settings = {
+                    basedpyright = {
+                        analysis = {
+                            typeCheckingMode = 'standard',
+                        },
+                    },
+                },
+            })
+
             require('mason-lspconfig').setup(o)
 
             vim.api.nvim_create_autocmd('LspAttach', {
