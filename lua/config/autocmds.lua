@@ -7,3 +7,13 @@ vim.api.nvim_create_autocmd('BufWritePre', {
     vim.api.nvim_win_set_cursor(0, pos)
   end,
 })
+
+-- salvar automaticamente
+vim.api.nvim_create_autocmd({ 'InsertLeave', 'BufLeave', 'FocusLost' }, {
+  pattern = '*',
+  callback = function()
+    if vim.bo.modified and vim.bo.buftype == '' and vim.fn.expand('%') ~= '' then
+      vim.cmd('silent! write')
+    end
+  end,
+})
