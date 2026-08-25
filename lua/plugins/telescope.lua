@@ -21,5 +21,7 @@ return {
         vim.keymap.set('n', '<leader>fg', t.live_grep, { desc = 'Grep no projeto' })
         vim.keymap.set('n', '<leader>fb', t.buffers, { desc = 'Trocar buffer' })
         vim.keymap.set('n', '<leader>fs', t.lsp_dynamic_workspace_symbols, { desc = 'Buscar simbolo' })
+        vim.keymap.set('n', '<leader>fd', function() t.diagnostics({ bufnr = 0 }) end, { desc = 'Erros do arquivo' })
+        vim.keymap.set('n', '<leader>fD', t.diagnostics, { desc = 'Erros do projeto' })
     end,
 }
