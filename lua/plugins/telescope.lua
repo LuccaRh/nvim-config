@@ -9,7 +9,32 @@ return {
     },
     config = function()
         local telescope = require('telescope')
+        local actions = require('telescope.actions')
+        local action_state = require('telescope.actions.state')
+
+        -- fecha o buffer selecionado (ou os marcados com Tab) descartando alteracoes
+        local force_delete_buffer = function(prompt_bufnr)
+            local picker = action_state.get_current_picker(prompt_bufnr)
+            picker:delete_selection(function(selection)
+                return pcall(vim.api.nvim_buf_delete, selection.bufnr, { force = true })
+            end)
+        end
+
         telescope.setup({
+            pickers = {
+                buffers = {
+                    mappings = {
+                        i = {
+                            ['<C-d>'] = actions.delete_buffer,
+                            ['<M-d>'] = force_delete_buffer,
+                        },
+                        n = {
+                            ['d'] = actions.delete_buffer,
+                            ['D'] = force_delete_buffer,
+                        },
+                    },
+                },
+            },
             extensions = {
                 fzf = {},
             },
