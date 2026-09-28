@@ -8,3 +8,4 @@ require('config.keymaps')      -- atalhos que nao sao de plugin
 require('config.diagnostics')  -- como os erros do LSP aparecem
 require('config.autocmds')     -- autosave e trim ao salvar
 require('config.lazy')         -- instala o lazy.nvim e carrega lua/plugins/
+require('config.estudo_commit') -- <leader>gl: estudar commits pelo quickfix

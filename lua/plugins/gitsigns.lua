@@ -19,7 +19,8 @@ return {
         current_line_blame_formatter = '    <author>, <author_time:%d/%m/%Y> · <summary>',
         on_attach = function(bufnr)
             local gs = require('gitsigns')
-            -- pular entre as mudancas do arquivo
+            -- pular entre as mudancas do arquivo (no estudo de commits,
+            -- entre os trechos do commit)
             vim.keymap.set('n', ']h', function() gs.nav_hunk('next') end, { buffer = bufnr, desc = 'Proximo hunk' })
             vim.keymap.set('n', '[h', function() gs.nav_hunk('prev') end, { buffer = bufnr, desc = 'Hunk anterior' })
         end,
