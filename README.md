@@ -35,6 +35,7 @@ Plugin novo = arquivo novo em `lua/plugins/` com `return { 'autor/plugin', ... }
 | blink.cmp | autocomplete (preset *super-tab*) |
 | gitsigns | mudanças na coluna e blame da linha do cursor |
 | lazygit | cliente git dentro do nvim |
+| diffview | diff lado a lado e histórico de commits |
 | neo-tree | árvore de arquivos |
 | flash | pular para qualquer ponto da tela |
 | vim-illuminate | realça as ocorrências da palavra sob o cursor |
@@ -93,16 +94,20 @@ O erro aparece sozinho embaixo da linha do cursor.
 |---|---|
 | `]h` / `[h` | próxima / anterior mudança do arquivo |
 | `<leader>gg` | lazygit (`e` lá dentro abre o arquivo neste nvim) |
+| `<leader>gd` | diffview do que não foi commitado (staged e unstaged) |
+| `<leader>gh` / `<leader>gH` | histórico do arquivo / da branch no diffview |
+| `<leader>gc` | fecha o diffview |
 | `<leader>gl` / `<leader>gL` | estudar commits da branch / de qualquer commit |
 
-**Estudar commits:** `<leader>gl` abre os commits que só a branch atual tem; `Enter`
+**Estudar commits:** `<leader>gl` abre os commits criados na branch atual (pelo reflog dela); `Enter`
 num commit põe os trechos dele no quickfix.
 
 | Tecla | Ação |
 |---|---|
 | `]q` / `[q` | próximo / anterior trecho |
 | `]g` / `[g` | próximo / anterior commit |
-| `<leader>gv` | alterna entre arquivo real (editável, com LSP) e versão do commit |
+| `<leader>gv` | alterna entre arquivo real (editável, com LSP, linhas do commit marcadas com `▍`) e versão do commit |
+| `<leader>gu` | mudanças unstaged no quickfix, com linhas realçadas e apagadas em vermelho (de novo desliga) |
 | `<leader>gq` | encerra o estudo |
 
 ## Comportamentos

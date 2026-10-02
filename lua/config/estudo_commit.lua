@@ -5,8 +5,9 @@ local action_state = require('telescope.actions.state')
 -- "estudar um commit" sem sair do layout normal: escolhe o commit
 -- e os trechos que ele mexeu viram o quickfix (]q/[q anda entre
 -- eles). Dois modos, alternados com <leader>gv:
---   real   -> abre os arquivos de verdade (editaveis) e os sinais do
---             gitsigns passam a comparar com o pai do commit
+--   real   -> abre os arquivos de verdade (editaveis) e marca com
+--             um sinal proprio as linhas que vieram do commit (o +
+--             do gitsigns continua sendo so o que nao foi commitado)
 --   commit -> abre o arquivo COMO ESTAVA naquele commit, somente
 --             leitura, com o que ele adicionou realcado e o que
 --             ele apagou em linhas virtuais
@@ -16,6 +17,8 @@ local action_state = require('telescope.actions.state')
 -- e i o que esta sendo estudado: e o que ]g / [g percorrem
 local estudo = { shas = {}, i = 0, sha = nil, modo = 'real' }
 local ns_commit = vim.api.nvim_create_namespace('estudo_commit')
+local ns_real = vim.api.nvim_create_namespace('estudo_commit_real')
+vim.api.nvim_set_hl(0, 'EstudoCommit', { link = 'DiagnosticInfo', default = true })
 
 -- um arquivo do diff: { path, hunks = { { old, new, count, del = {linhas} } } }
 local function ler_diff(sha)
@@ -116,11 +119,66 @@ local function limpar_buffers_de_commit()
     end
 end
 
+-- modo real: marca no arquivo de verdade as linhas que o blame ainda
+-- atribui ao commit (as que commits posteriores ou mudancas nao
+-- commitadas mexeram ja nao sao dele). O ]h / [h do gitsigns usa
+-- b:estudo_trechos para pular entre esses blocos.
+local function marcar_real(buf)
+    if not estudo.arquivos or not vim.api.nvim_buf_is_loaded(buf) then return end
+    local rel = estudo.arquivos[vim.api.nvim_buf_get_name(buf)]
+    if not rel then return end
+    vim.api.nvim_buf_clear_namespace(buf, ns_real, 0, -1)
+    local conteudo = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), '\n') .. '\n'
+    local blame = vim.fn.systemlist({ 'git', '-C', estudo.root, 'blame', '-l', '-s', '--contents', '-', '--', rel }, conteudo)
+    if vim.v.shell_error ~= 0 then return end
+    local inicios, anterior = {}, false
+    for i, l in ipairs(blame) do
+        local do_commit = l:match('^%^?(%x+)') == estudo.sha
+        if do_commit then
+            vim.api.nvim_buf_set_extmark(buf, ns_real, i - 1, 0, {
+                sign_text = '▍', sign_hl_group = 'EstudoCommit', priority = 5,
+            })
+            if not anterior then table.insert(inicios, i) end
+        end
+        anterior = do_commit
+    end
+    vim.b[buf].estudo_trechos = inicios
+end
+
+local function desmarcar_real()
+    estudo.arquivos = nil
+    for _, b in ipairs(vim.api.nvim_list_bufs()) do
+        if vim.api.nvim_buf_is_loaded(b) then
+            vim.api.nvim_buf_clear_namespace(b, ns_real, 0, -1)
+            vim.b[b].estudo_trechos = nil
+        end
+    end
+end
+
+-- arquivos abertos depois (pelo quickfix) tambem recebem as marcas
+vim.api.nvim_create_autocmd('BufReadPost', {
+    group = vim.api.nvim_create_augroup('EstudoCommitReal', { clear = true }),
+    callback = function(ev) marcar_real(ev.buf) end,
+})
+
+-- realce do gitsigns no proprio arquivo: linhas novas/mudadas com fundo,
+-- palavras mudadas e o que foi apagado em linhas virtuais
+local function realce_unstaged(ligado)
+    local gs = require('gitsigns')
+    gs.toggle_linehl(ligado)
+    gs.toggle_word_diff(ligado)
+    gs.toggle_deleted(ligado)
+    estudo.unstaged = ligado
+end
+
 local function estudar_commit(sha)
-    estudo.sha = sha
+    estudo.sha = vim.fn.systemlist({ 'git', 'rev-parse', sha })[1]
+    sha = estudo.sha
     local root = vim.fn.systemlist({ 'git', 'rev-parse', '--show-toplevel' })[1]
     local itens = {}
     limpar_buffers_de_commit()
+    desmarcar_real()
+    if estudo.unstaged then realce_unstaged(false) end
     for _, arq in ipairs(ler_diff(sha)) do
         local buf = estudo.modo == 'commit' and buffer_do_commit(sha, arq) or nil
         for _, h in ipairs(arq.hunks) do
@@ -133,7 +191,11 @@ local function estudar_commit(sha)
     local titulo = vim.fn.system({ 'git', 'log', '-1', '--format=%h %s', sha }):gsub('\n', '')
     vim.fn.setqflist({}, ' ', { title = '[' .. estudo.modo .. '] ' .. titulo, items = itens })
     if estudo.modo == 'real' then
-        require('gitsigns').change_base(sha .. '^', true)
+        estudo.root, estudo.arquivos = root, {}
+        for _, arq in ipairs(ler_diff(sha)) do
+            estudo.arquivos[root .. '/' .. arq.path] = arq.path
+        end
+        for _, b in ipairs(vim.api.nvim_list_bufs()) do marcar_real(b) end
     end
     if #itens > 0 then
         vim.cmd('cfirst')
@@ -173,21 +235,74 @@ end
 vim.keymap.set('n', ']g', function() pular_commit(1) end, { desc = 'Proximo commit em estudo' })
 vim.keymap.set('n', '[g', function() pular_commit(-1) end, { desc = 'Commit anterior em estudo' })
 
--- commits que so existem na branch atual: tudo que o HEAD alcanca, menos o
--- que qualquer OUTRA branch (local ou remota) tambem alcanca. Comparar so com
--- origin/master traz junto os commits de branches em que esta foi baseada e
--- que ainda nao entraram na master.
+local function eh_ancestral(a, b)
+    vim.fn.system({ 'git', 'merge-base', '--is-ancestor', a, b })
+    return vim.v.shell_error == 0
+end
+
+-- de onde a branch saiu, pelo reflog dela: o ponto em que foi criada,
+-- movido por rebase/reset que a levaram pra fora da propria historia.
+-- Um rebase -i ou reset pra tras (alvo ancestral da ponta de antes) nao
+-- muda a base, e voltar pra uma ponta que a branch ja teve (desfazer um
+-- rebase com reset) volta a base daquela epoca. nil se o reflog nao
+-- conta a historia toda.
+local function base_pelo_reflog(branch)
+    local log = vim.fn.systemlist({ 'git', 'reflog', 'show', '--format=%H%x09%gs', 'refs/heads/' .. branch })
+    if vim.v.shell_error ~= 0 or #log == 0 then return nil end
+    local base, ponta
+    local base_da_ponta = {}
+    for i = #log, 1, -1 do   -- do mais antigo pro mais novo
+        local sha, msg = log[i]:match('^(%x+)\t(.*)$')
+        if not sha then return nil end
+        if i == #log then
+            local origem = msg:match('^branch: Created from (.+)$')
+            -- sem registro da criacao (reflog expirou), ou copia local de
+            -- uma branch remota: os commits dela nao nasceram aqui
+            if not origem or origem:match('^[^/]+/(.+)$') == branch then return nil end
+            base = sha
+        elseif base_da_ponta[sha] then
+            base = base_da_ponta[sha]
+        else
+            local alvo
+            if msg:match('^rebase[^:]*%(finish%)') or msg:match('^pull %-%-rebase[^:]*%(finish%)') then
+                alvo = msg:match('onto (%x+)$')
+            elseif msg:match('^reset: ') then
+                alvo = sha
+            end
+            if alvo and not eh_ancestral(alvo, ponta) then base = alvo end
+        end
+        base_da_ponta[sha] = base
+        ponta = sha
+    end
+    if not eh_ancestral(base, 'HEAD') then return nil end
+    return base
+end
+
+-- commits criados na branch atual: do ponto de onde ela saiu ate o HEAD,
+-- so pela linha dela (--first-parent: um merge da master nao traz os
+-- commits de la). Sem reflog, cai pra tudo que o HEAD alcanca menos o que
+-- outra branch tambem alcanca, ignorando as que foram criadas em cima
+-- desta (elas tem todos os commits dela).
 local function so_desta_branch()
     local atual = vim.fn.systemlist({ 'git', 'branch', '--show-current' })[1] or ''
     if atual == '' then
         return { 'origin/master..HEAD' }, 'origin/master..HEAD'   -- HEAD solto
     end
-    local upstream = vim.fn.systemlist({ 'git', 'rev-parse', '--abbrev-ref', atual .. '@{upstream}' })[1] or ''
-    local args = { 'HEAD', '--not', '--exclude=' .. atual, '--branches' }
-    if vim.v.shell_error == 0 and upstream ~= '' then
-        table.insert(args, '--exclude=' .. upstream)
+    local base = base_pelo_reflog(atual)
+    if base and base ~= vim.fn.systemlist({ 'git', 'rev-parse', 'HEAD' })[1] then
+        return { '--first-parent', base .. '..HEAD' }, atual .. ' desde ' .. base:sub(1, 7)
     end
-    table.insert(args, '--remotes')
+    local upstream = vim.fn.systemlist({ 'git', 'rev-parse', '--symbolic-full-name', atual .. '@{upstream}' })[1] or ''
+    local em_cima = {}
+    for _, r in ipairs(vim.fn.systemlist({ 'git', 'for-each-ref', '--contains', 'HEAD', '--format=%(refname)' })) do
+        em_cima[r] = true
+    end
+    local args = { 'HEAD', '--not' }
+    for _, r in ipairs(vim.fn.systemlist({ 'git', 'for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/remotes' })) do
+        if not em_cima[r] and r ~= upstream and not r:match('/HEAD$') then
+            table.insert(args, r)
+        end
+    end
     return args, atual
 end
 
@@ -213,13 +328,45 @@ vim.keymap.set('n', '<leader>gl', function() commits_para_estudar(so_desta_branc
 vim.keymap.set('n', '<leader>gL', function() commits_para_estudar({ 'HEAD' }, 'todos') end,
     { desc = 'Estudar qualquer commit' })
 
--- sai do estudo: sinais de volta ao normal, quickfix fechado e os
--- buffers commit:// apagados
-vim.keymap.set('n', '<leader>gq', function()
-    require('gitsigns').reset_base(true)
+local function encerrar_estudo()
+    desmarcar_real()
     limpar_buffers_de_commit()
+    realce_unstaged(false)
     vim.fn.setqflist({}, 'r', { title = '', items = {} })
     vim.cmd('cclose')
     estudo.shas, estudo.i, estudo.sha = {}, 0, nil
+end
+
+-- o que ainda nao foi para o stage, no mesmo esquema do estudo: os
+-- trechos de todos os arquivos no quickfix e os arquivos reais com o
+-- realce do modo commit. De novo (ou <leader>gq) desliga.
+vim.keymap.set('n', '<leader>gu', function()
+    if estudo.unstaged then
+        encerrar_estudo()
+        vim.notify('Mudancas unstaged: realce desligado')
+        return
+    end
+    encerrar_estudo()
+    realce_unstaged(true)
+    require('gitsigns').setqflist('all', { open = false }, function()
+        vim.schedule(function()
+            local n = #vim.fn.getqflist()
+            if n == 0 then
+                vim.notify('Nenhuma mudanca unstaged')
+                return
+            end
+            vim.fn.setqflist({}, 'a', { title = '[unstaged]' })
+            vim.cmd('cfirst')
+            vim.cmd('botright copen 8')
+            vim.cmd('wincmd p')
+            vim.notify('Mudancas unstaged (' .. n .. ' trechos)')
+        end)
+    end)
+end, { desc = 'Ver mudancas unstaged' })
+
+-- sai do estudo: marcas do commit e realce removidos, quickfix fechado
+-- e os buffers commit:// apagados
+vim.keymap.set('n', '<leader>gq', function()
+    encerrar_estudo()
     vim.notify('Estudo encerrado')
 end, { desc = 'Encerrar estudo de commits' })

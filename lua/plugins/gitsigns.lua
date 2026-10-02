@@ -20,9 +20,19 @@ return {
         on_attach = function(bufnr)
             local gs = require('gitsigns')
             -- pular entre as mudancas do arquivo (no estudo de commits,
-            -- entre os trechos do commit)
-            vim.keymap.set('n', ']h', function() gs.nav_hunk('next') end, { buffer = bufnr, desc = 'Proximo hunk' })
-            vim.keymap.set('n', '[h', function() gs.nav_hunk('prev') end, { buffer = bufnr, desc = 'Hunk anterior' })
+            -- entre os trechos do commit, que ele deixa em b:estudo_trechos)
+            local function pular(passo)
+                local trechos = vim.b[bufnr].estudo_trechos
+                if not trechos then return gs.nav_hunk(passo > 0 and 'next' or 'prev') end
+                local cur, alvo = vim.fn.line('.'), nil
+                for _, l in ipairs(trechos) do
+                    if passo > 0 and l > cur and not alvo then alvo = l end
+                    if passo < 0 and l < cur then alvo = l end
+                end
+                if alvo then vim.api.nvim_win_set_cursor(0, { alvo, 0 }) end
+            end
+            vim.keymap.set('n', ']h', function() pular(1) end, { buffer = bufnr, desc = 'Proximo hunk' })
+            vim.keymap.set('n', '[h', function() pular(-1) end, { buffer = bufnr, desc = 'Hunk anterior' })
         end,
     },
 }
